@@ -1,0 +1,8 @@
+dexp-dl
+pytorch
+pandas
+seaborn
+cucim
+higra
+tifffile
+
