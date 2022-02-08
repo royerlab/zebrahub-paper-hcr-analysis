@@ -1,0 +1,72 @@
+---
+title: "HCR Analysis"
+author: Jordao Bragantini
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: pdf_document
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+```
+
+```{r}
+df <- read.csv("hcr_data.csv")
+df$stage <- factor(df$stage, levels=c('bud', '5', '10', '15', '20', '30'))
+
+# cell-wise normalization
+df %<>%
+    group_by(file, as.integer(round(z))) %>%
+    mutate(SOX2 = SOX2 / mean(DAPI / area),
+           TBXT = TBXT / mean(DAPI / area)) %>%
+    ungroup() %>%
+    group_by(file) %>%
+    mutate(z = z / max(z),
+           y = y / max(y),
+           x = x / max(x))
+```
+
+
+```{r}
+df %>%
+    ggplot(aes(x = SOX2, y = TBXT, color=stage)) +
+    theme_bw() +
+    geom_point(alpha=0.5) +
+    facet_grid(vars(stage))
+```
+
+```{r}
+df %>%
+    ggplot(aes(x = SOX2, y = TBXT, color=stage)) +
+    theme_bw() +
+    geom_point(alpha=0.5) +
+    facet_wrap(file ~ stage)
+```
+
+```{r}
+df %>%
+    ggplot(aes(x = SOX2, y = TBXT, color=stage)) +
+    theme_bw() +
+    geom_density_2d() +
+    facet_wrap(vars(stage))
+```
+
+
+```{r}
+df %>%
+    filter(str_detect(file, '100821 sample2')) %>%
+    # filter(str_detect(file, '092221')) %>%
+    mutate(rgb = rgb(green = 0, red = TBXT / max(TBXT), blue = SOX2 / max(SOX2))) %>%
+    ggplot(aes(x = x, y = y, color = I(rgb))) +
+    theme_bw() +
+    geom_point(size=3, alpha=0.7)
+```
+
