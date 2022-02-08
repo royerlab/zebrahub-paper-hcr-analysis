@@ -79,18 +79,28 @@ def process(image: np.ndarray, display: bool = False, im_path: Optional[Path] = 
         area_white_top_hat(image[i], 1e4, sampling=1, axis=0)
         for i in range(len(image))
     ])
+
+    dapi_z_intensity = np.quantile(no_bkg[CELL_CHANNEL], q=0.999, axis=(1, 2))
+    max_intensity = dapi_z_intensity.max()
+
+    normalized = no_bkg / dapi_z_intensity[None, :, None, None]
+
+    # normalized = ((max_intensity / dapi_z_intensity[None, :, None, None]) * no_bkg)
+    # normalized = normalized.round().astype(no_bkg.dtype)
+
     if display:
         import napari
         viewer = napari.Viewer()
         viewer.add_image(image, name='original', channel_axis=0)
         viewer.add_image(no_bkg, name='processed', channel_axis=0)
+        viewer.add_image(normalized, name='normalized', channel_axis=0)
         napari.run()
     
     labels = segment_with_WS(
-        image[CELL_CHANNEL], # + no_bkg[CELL_CHANNEL],
+        image[CELL_CHANNEL],
         display=display
     )
-    props: Sequence[RegionProperties] = regionprops(labels, no_bkg.transpose((1, 2, 3, 0)))
+    props: Sequence[RegionProperties] = regionprops(labels, normalized.transpose((1, 2, 3, 0)))
 
     df = []
 
@@ -112,7 +122,7 @@ def process(image: np.ndarray, display: bool = False, im_path: Optional[Path] = 
         measurements = np.zeros((*no_bkg.shape[1:], no_bkg.shape[0]) , dtype=np.float32)
         for p in props:
             prop_feats = SUMMARY_FUN(p.intensity_image[p.image], axis=0)
-            measurements[p.slice][p.image] = prop_feats / (prop_feats[CELL_CHANNEL] + 1e-8)
+            measurements[p.slice][p.image] = prop_feats # / (prop_feats[CELL_CHANNEL] + 1e-8)
 
         measurements = measurements.transpose((3, 0, 1, 2))
         imwrite(str(im_path.with_suffix('')) + '_nobkg.tif',  no_bkg)
@@ -133,17 +143,19 @@ if __name__ == '__main__':
     im_paths = find_image_paths(images_dir)
     dfs = []
 
-    for im_path in tqdm(im_paths, desc='Processing'):
-        image = imread(str(im_path))
+    with tqdm(im_paths, desc='Processing') as pbar:
+        for im_path in pbar:
+            pbar.set_description(desc=f'{im_path.name}')
+            image = imread(str(im_path))
 
-        df, label = process(image, display=DISPLAY, im_path=im_path if SAVE else None)
-        df['file'] = im_path.name.split('.', 1)[0]
-        df['stage'] = get_stage(im_path)
+            df, label = process(image, display=DISPLAY, im_path=im_path if SAVE else None)
+            df['file'] = im_path.name.split('.', 1)[0]
+            df['stage'] = get_stage(im_path)
 
-        write_label(im_path, label)
+            write_label(im_path, label)
 
-        dfs.append(df)
-    
-        # updating at every iteration so I don't have to wait to it to finish
-        df = pd.concat(dfs)
-        df.to_csv('hcr_data.csv', index=False)
+            dfs.append(df)
+
+            # updating at every iteration so I don't have to wait to it to finish
+            df = pd.concat(dfs)
+            df.to_csv('hcr_data_norm.csv', index=False)
