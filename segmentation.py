@@ -13,7 +13,9 @@ from dexp.processing.morphology.utils import get_3d_image_graph
 
 from cucim.skimage import morphology as morph
 from cucim.skimage.filters import threshold_otsu
+from cupyx.scipy.ndimage import median_filter
 from skimage import segmentation
+from pyift import shortestpath as sp
 
 
 ### deep learning params ###
@@ -27,7 +29,7 @@ WS_HIERARCHY = hg.watershed_hierarchy_by_area
 
 ### ws parameters ###
 AREA_THOLD = 1e4
-WS_THOLD = 10
+WS_THOLD = 1
 
 def in_transform(image):
     return th.Tensor(image).unsqueeze_(0).half()
@@ -91,17 +93,17 @@ def segment_with_DL(image: np.ndarray, display: bool = False) -> np.ndarray:
 def segment_with_WS(image: np.ndarray, display: bool = False) -> np.ndarray:
     opened = morph.opening(cp.asarray(image),  morph.ball(np.sqrt(2)))
     closed = cp.asarray(area_closing(opened.get(), AREA_THOLD, sampling=1, axis=0))
-
-    graph = get_3d_image_graph(opened.shape)
-    weights = hg.weight_graph(graph, -opened.get(), hg.WeightFunction.mean)
-    tree, alt = hg.watershed_hierarchy_by_area(graph, weights)
-
-    labels = hg.labelisation_horizontal_cut_from_threshold(tree, alt, WS_THOLD)
-    labels, _, _ = segmentation.relabel_sequential(labels)
+    closed = median_filter(closed, footprint=cp.ones((3, 1, 1), dtype=bool))
 
     thold = threshold_otsu(closed)
     detection = (closed > thold).get()
-    labels[np.logical_not(detection)] = 0
+
+    basins = opened / np.quantile(opened, 0.999)
+    basins = basins.max() - basins
+    basins = np.sqrt(basins)
+    _, labels = sp.watershed_from_minima(basins.get(), detection, H_minima=0.05, compactness=0.005)
+    labels[labels < 0] = 0
+    labels, _, _ = segmentation.relabel_sequential(labels)
 
     if display:
         import napari
