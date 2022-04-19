@@ -1,11 +1,9 @@
 
 import sys
-from tkinter.tix import CELL
 import numpy as np
 import pandas as pd
 import cupy as cp
 import re
-from functools import partial
 
 from typing import Sequence, Tuple, Optional
 from pathlib import Path
@@ -158,4 +156,4 @@ if __name__ == '__main__':
 
             # updating at every iteration so I don't have to wait to it to finish
             df = pd.concat(dfs)
-            df.to_csv('hcr_data_norm.csv', index=False)
+            df.to_csv('hcr_data.csv', index=False)
