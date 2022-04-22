@@ -4,6 +4,7 @@ import torch as th
 import torch.nn.functional as F
 import cupy as cp
 import higra as hg
+from pathlib import Path
 
 from dexp_dl.models import hrnet
 from dexp_dl.inference import ModelInference
@@ -52,7 +53,8 @@ model = ModelInference(
     tile=(48, 96, 96), num_outputs=NETWORK_N_CLASSES,
 )
 
-model.load_weights(NETWORK_WEIGHTS_PATH)
+if Path(NETWORK_WEIGHTS_PATH).exists():
+    model.load_weights(NETWORK_WEIGHTS_PATH)
 
 
 def segment_with_DL(image: np.ndarray, display: bool = False) -> np.ndarray:

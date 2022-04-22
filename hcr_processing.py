@@ -5,10 +5,12 @@ import pandas as pd
 import cupy as cp
 import re
 
-from typing import Sequence, Tuple, Optional
+import yaml
+from typing import Sequence, Tuple, Optional, Dict
 from pathlib import Path
 from tifffile import imread, imwrite
 from cucim.skimage.transform import downscale_local_mean
+from cucim.skimage.filters import gaussian
 from skimage.measure import regionprops
 from skimage.measure._regionprops import RegionProperties
 from tqdm import tqdm
@@ -20,7 +22,7 @@ from segmentation import segment_with_DL, segment_with_WS
 DISPLAY = False
 SAVE = True
 CELL_CHANNEL = 0
-CHANNELS = ['DAPI', 'TBXT', 'SOX2', 'OCT']
+CHANNELS = ['DAPI', 'SOX2', 'TBXT', 'OCT']
 Z_SCALE = 2
 AREA_OPENING_THOLD = 1e4
 SUMMARY_FUN = np.sum
@@ -69,8 +71,29 @@ def write_label(im_path: Path, label: np.ndarray) -> None:
     imwrite(lb_path, label)
 
 
-def process(image: np.ndarray, display: bool = False, im_path: Optional[Path] = None) -> Tuple[pd.DataFrame, np.ndarray]:
+def correct_intensities(image: np.ndarray, metadata: Dict) -> np.ndarray:
+    """Corrects image intensities according to exposure and laser power,
+       it assumes axes are ordered according to wave-length.
+    """
+    assert CELL_CHANNEL == 0
+
+    corrected = image.copy()
+
+    corrected[1, ...] = corrected[1, ...] *\
+            (metadata["LASERPOWER_405"] / metadata["LASERPOWER_488"]) *\
+            (metadata["EXPOSURE_405"] / metadata["EXPOSURE_488"])
+
+    corrected[2, ...] = corrected[2, ...] *\
+            (metadata["LASERPOWER_405"] / metadata["LASERPOWER_561"]) *\
+            (metadata["EXPOSURE_405"] / metadata["EXPOSURE_561"])
+
+    # OCT-4 is not corrected
+    return corrected
+
+
+def process(image: np.ndarray, metadata: Dict, display: bool = False, im_path: Optional[Path] = None) -> Tuple[pd.DataFrame, np.ndarray]:
     image = downscale_local_mean(cp.asarray(image), (1, Z_SCALE, 1, 1)).get()
+    # image = correct_intensities(image, metadata)  # Can be corrected on the tabular data.
 
     # removing background 
     no_bkg = np.stack([
@@ -78,13 +101,11 @@ def process(image: np.ndarray, display: bool = False, im_path: Optional[Path] = 
         for i in range(len(image))
     ])
 
-    dapi_z_intensity = np.quantile(no_bkg[CELL_CHANNEL], q=0.999, axis=(1, 2))
-    max_intensity = dapi_z_intensity.max()
+    dapi = gaussian(cp.asarray(image[CELL_CHANNEL]), sigma=1).get()
+    dapi_z_intensity = np.quantile(dapi, q=0.999, axis=(1, 2))
 
+    # normalizing per z slice
     normalized = no_bkg / dapi_z_intensity[None, :, None, None]
-
-    # normalized = ((max_intensity / dapi_z_intensity[None, :, None, None]) * no_bkg)
-    # normalized = normalized.round().astype(no_bkg.dtype)
 
     if display:
         import napari
@@ -146,9 +167,15 @@ if __name__ == '__main__':
             pbar.set_description(desc=f'{im_path.name}')
             image = imread(str(im_path))
 
-            df, label = process(image, display=DISPLAY, im_path=im_path if SAVE else None)
+            with open(im_path.parent / 'metadata.yml') as f:
+                metadata = yaml.safe_load(f)
+
+            df, label = process(image, metadata=metadata, display=DISPLAY, im_path=im_path if SAVE else None)
             df['file'] = im_path.name.split('.', 1)[0]
             df['stage'] = get_stage(im_path)
+            for k, v in metadata.items():
+                if 'EXPOSURE' in k or 'LASERPOWER' in k:
+                    df[k] = v
 
             write_label(im_path, label)
 
