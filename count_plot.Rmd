@@ -1,0 +1,84 @@
+---
+title: "HCR Analysis"
+author: Jordao Bragantini
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: pdf_document
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+```
+
+
+```{r data loading}
+setwd("/mnt/micro1_nfs/_special/2022_nmps_hcr")
+
+df <- read.csv("hcr_data.csv")
+df$stage <- factor(df$stage, levels=c('bud', '5s', '10s', '15s', '20s', '30s'))
+
+# cell-wise normalization
+df %<>%
+    group_by(file) %>%
+    mutate(z = z / max(z),
+           y = y / max(y),
+           x = x / max(x),
+           both = TBXT * SOX2)
+
+fixfile <- function(x) str_replace_all(x, "(hcr_)|(_crop_denoised)|(2021)", "")
+
+metadata <- read.csv('mapping-thold.csv') %>%
+    mutate(file=str_replace_all(FORMATTED, ".tif", "")) %>%
+    mutate(file=fixfile(`file`))
+ 
+df %<>%
+    mutate(file=fixfile(`file`)) %>%
+    left_join(metadata, by="file") %>%
+    mutate(nmp=SOX2 >= CUTOFF_488 & TBXT >= CUTOFF_561)
+
+# removing not annotated files
+df %<>%
+    filter(!is.nan(CUTOFF_488))
+```
+
+```{r threshold, fig.keep='all', fig.align='center'}
+df %>%
+    group_by(file, stage) %>%
+    summarize(count=sum(nmp)) %>%
+    ggplot(aes(stage, count, fill=stage)) +
+    ylab("NMP count per embryo") +
+    geom_boxplot() +
+    geom_point() +
+    scale_x_discrete(drop=FALSE) +
+    scale_fill_viridis_d(option="C", begin=0.0, end=0.7) +
+    theme_bw() +
+    ggtitle("NMPs count distribution")
+```
+
+```{r}
+df_count <- df %>%
+    group_by(file, stage) %>%
+    summarize(count=sum(nmp)) %>%
+    ungroup()
+
+metadata %>%
+    left_join(df_count, by="file") %$%
+    write.csv(., 'out-count.csv')
+```
+
+```{r}
+df %>%
+    group_by(stage) %>%
+    summarize(count=sum(nmp)) %>%
+    arrange(-count)
+```
+

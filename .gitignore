@@ -155,8 +155,9 @@ cython_debug/
 .Rhistory
 .RData
 
-# pdf files
+# out files
 *.pdf
+*.csv
 
 # torch files
 *.ckpt
