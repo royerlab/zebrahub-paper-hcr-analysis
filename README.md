@@ -27,6 +27,8 @@ pip install -r requirements
 
 - `rename.py`: Renames and reorganizes the files to our standard format using the metadata file.
 
+- `store_metadata.py`: Auxiliary file to map metadata from table to the standardized directory path.
+
 - `max_project_figures.py`: Creates the images of the maximum intensity projections overlaid with the selected cells.
 
 - `count_plot.Rmd`: Generates the count barplot given the processed measurements file and the threshold annotation file. File must be edited to set input paths.
