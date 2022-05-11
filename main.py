@@ -1,5 +1,5 @@
 
-import sys
+import click
 import numpy as np
 import pandas as pd
 import cupy as cp
@@ -14,9 +14,10 @@ from cucim.skimage.filters import gaussian
 from skimage.measure import regionprops
 from skimage.measure._regionprops import RegionProperties
 from tqdm import tqdm
+import napari
 
 from dexp.processing.morphology import area_white_top_hat
-from segmentation import segment_with_DL, segment_with_WS
+from segmentation import segment_with_WS
 
 
 DISPLAY = False
@@ -37,9 +38,9 @@ def find_image_paths(images_dir: Path) -> Sequence[Path]:
             continue
             
         image = imread(str(im_path))
+
         if image.ndim != 4:
             errors = errors + f" - Could not load {im_path}, expected 4 dimensions and found array of shape {image.shape}\n"
-            continue
 
         paths.append(im_path)
     
@@ -93,7 +94,7 @@ def correct_intensities(image: np.ndarray, metadata: Dict) -> np.ndarray:
 
 def process(image: np.ndarray, metadata: Dict, display: bool = False, im_path: Optional[Path] = None) -> Tuple[pd.DataFrame, np.ndarray]:
     image = downscale_local_mean(cp.asarray(image), (1, Z_SCALE, 1, 1)).get()
-    # image = correct_intensities(image, metadata)  # Can be corrected on the tabular data.
+    # image = correct_intensities(image, metadata)  # NOTE: not used, corrected on the tabular data.
 
     # removing background 
     no_bkg = np.stack([
@@ -150,14 +151,10 @@ def process(image: np.ndarray, metadata: Dict, display: bool = False, im_path: O
     return df, labels
 
 
-if __name__ == '__main__':
-    
-    if len(sys.argv) != 2:
-        print('ERROR, expected: python hcr_analysis.py <image directory>')
-        sys.exit(-1)
-    
-    images_dir = Path(sys.argv[1])
-    assert images_dir.exists()
+@click.command('process')
+@click.option('--images-dir', '-i', type=click.Path(exists=True, path_type=Path), help='cropped image directory', required=True)
+@click.option('--out-path', '-o', type=click.Path(path_type=Path), help='.csv output path', required=True)
+def process_cli(images_dir: Path, out_path: Path) -> None:
 
     im_paths = find_image_paths(images_dir)
     dfs = []
@@ -183,4 +180,65 @@ if __name__ == '__main__':
 
             # updating at every iteration so I don't have to wait to it to finish
             df = pd.concat(dfs)
-            df.to_csv('hcr_data.csv', index=False)
+            df.to_csv(out_path, index=False)
+
+
+@click.command('figure')
+@click.option('--image-dir', '-i', required=True, type=click.Path(exists=True, path_type=Path), help='input images (*_nobkg.etc, *_labels.tiff, etc.) path')
+@click.option('--out-dir', '-o', required=True, type=click.Path(path_type=Path), help='output directory')
+def figure_cli(image_dir: Path, out_dir: Path) -> None:
+    out_dir.mkdir(exist_ok=True)
+
+    image_path = str(next(image_dir.glob('*denoised.tif')))
+    labels_path = image_path.replace('.tif', '_label.tif')
+    nobkg_path = image_path.replace('.tif', '_nobkg.tif')
+    measure_path = image_path.replace('.tif', '_measure.tif')
+
+    with open(out_dir / 'LOG.txt', mode='w') as f:
+        f.write(f'input directory: {image_dir}')
+
+    v = napari.Viewer()
+    v.window.resize(1080, 720)
+    v.dims.ndisplay = 3
+
+    def set_camera():
+        v.camera.center = (25, 265, 235)
+        v.camera.zoom = 1
+        v.camera.angles = (-45, 55, 135)
+
+    def screenshot(name):
+        for i in range(3):
+            v.layers[i].visible = True
+            v.screenshot(out_dir / f'{name}_ch{i}.png')
+            v.layers[i].visible = False
+ 
+    v.add_image(imread(image_path), channel_axis=0, scale=(.5, 1, 1), visible=False)
+    set_camera()
+    screenshot('image')
+    v.layers.clear()
+
+    v.add_image(imread(nobkg_path), channel_axis=0, visible=False)
+    set_camera()
+    screenshot('nobkg')
+    v.layers.clear()
+
+    v.add_image(imread(measure_path), channel_axis=0, visible=False)
+    set_camera()
+    screenshot('measure')
+    v.layers.clear()
+
+    v.add_labels(imread(labels_path))
+    set_camera()
+    v.screenshot(out_dir / 'labels.png')
+
+
+@click.group()
+def main():
+    pass
+
+
+main.add_command(process_cli)
+main.add_command(figure_cli)
+
+if __name__ == '__main__':
+    main()

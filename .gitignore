@@ -158,3 +158,8 @@ cython_debug/
 # pdf files
 *.pdf
 
+# torch files
+*.ckpt
+
+# vscode files
+.vscode

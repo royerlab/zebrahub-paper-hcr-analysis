@@ -1,8 +1,7 @@
-dexp-dl
-pytorch
+dexp[optional]
 pandas
 seaborn
 cucim
 higra
+pyift
 tifffile
-
