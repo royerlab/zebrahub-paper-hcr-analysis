@@ -54,6 +54,8 @@ def make_figure(im_path: Path, figs_dir: Path) -> None:
     fig_name = im_path.name.split('measure', 1)[0] + 'threshold_figure.png'
     v.screenshot(figs_dir / fig_name)
 
+    v.close()
+
     # napari.run()
 
 
