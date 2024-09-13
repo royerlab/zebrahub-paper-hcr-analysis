@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/427429472.svg)](https://zenodo.org/doi/10.5281/zenodo.13761254)
 
 # HCR Analysis files
 
